@@ -1,0 +1,316 @@
+ADD JAR /opt/cloudera/parcels/CDH/lib/hive/lib/hive-hcatalog-core-1.1.0-cdh5.11.2.jar;
+
+drop table nyc_taxi_table_ravidivecha;
+
+create external table if not exists nyc_taxi_table_ravidivecha(
+VendorID int,
+tpep_pickup_datetime timestamp,
+tpep_dropoff_datetime timestamp,
+Passenger_count int,
+Trip_distance int,
+RateCodeID int,
+Store_and_fwd_flag int,
+PULocationID int,
+DOLocationID int,
+Payment_type int,
+Fare_amount double,
+extra double,
+MTA_tax double,
+Tip_amount double,
+Tolls_amount double,
+Improvement_surcharge double, 
+Total_amount double)
+ROW FORMAT SERDE 'org.apache.hadoop.hive.serde2.OpenCSVSerde'
+with serdeproperties  ('paths' = '')
+location '/common_folder/nyc_taxi_data/'
+tblproperties ("skip.header.line.count"="2");
+
+select * from nyc_taxi_table_ravidivecha limit 10;
+-- Question 1 --
+-- ########## --
+-- How many records has each TPEP provider provided? Write a query that summarises the number of records of each provider --
+
+select count(distinct vendorid) as Count_Vendors from nyc_taxi_table_ravidivecha;
+-- There are 2 unique vendors supplying data --
+
+-- Question 2 --
+-- ########## --
+-- The data provided is for months November and December only. Check whether the data is consistent, and if not, identify the data quality issues. Mention all data -- 
+-- quality issues in comments. --
+
+select month(tpep_pickup_datetime) as distinct_month, count(month(tpep_pickup_datetime)) as count_month from nyc_taxi_table_ravidivecha group by month(tpep_pickup_datetime);
+select vendorid, count(month(tpep_pickup_datetime)) as NonDec_data from nyc_taxi_table_ravidivecha where month(tpep_pickup_datetime) <= 10 group by vendorid;
+-- There is data present with months other than November and Decemeber. In total there are 293 records which are filled with months other than November or December -- 
+-- All incorrect records are from vendorid 2 --
+
+-- Question 3 --
+-- ########## --
+-- You might have encountered unusual or erroneous rows in the dataset. Can you conclude which vendor is doing a bad job in providing the records using different --
+-- columns of the dataset? Summarise your conclusions based on every column where these errors are present. For example,  There are unusual passenger count i.e 0 -- 
+-- or 192 which is unusual. --
+
+select year(tpep_pickup_datetime) as distinct_year, count(year(tpep_pickup_datetime)) as count_year from nyc_taxi_table_ravidivecha group by year(tpep_pickup_datetime);
+select count(year(tpep_pickup_datetime)) as non_2017_data from nyc_taxi_table_ravidivecha where year(tpep_pickup_datetime) != 2017;
+select vendorid, count(year(tpep_pickup_datetime)) as non_2017_data from nyc_taxi_table_ravidivecha where year(tpep_pickup_datetime) != 2017 group by vendorid ;
+-- There is data present for years other than 2017 as well. In total there are 107 records which are filled with year other than 2017. --
+-- All incorrect records with year other than 2017 is from vendorid 2 --
+
+select year(tpep_dropoff_datetime) as distinct_year, count(year(tpep_dropoff_datetime)) as count_year from nyc_taxi_table_ravidivecha group by year(tpep_dropoff_datetime);
+select count(year(tpep_dropoff_datetime)) as non_2017_data from nyc_taxi_table_ravidivecha where year(tpep_dropoff_datetime) != 2017;
+select vendorid, count(year(tpep_dropoff_datetime)) as non_2017_data from nyc_taxi_table_ravidivecha where year(tpep_dropoff_datetime) != 2017 group by vendorid ;
+-- There is data present for years other than 2017 as well. In total there are 1831 records which are filled with year other than 2017. --
+-- Incorrect records with year other than 2017 have come from both vendors --
+
+select abs(day(tpep_dropoff_datetime)-day(tpep_pickup_datetime)) as no_of_days, count(day(tpep_dropoff_datetime)-day(tpep_pickup_datetime)) as count_days 
+from nyc_taxi_table_ravidivecha 
+group by day(tpep_dropoff_datetime)-day(tpep_pickup_datetime);
+-- We can infer that there are 4 incorrect entries where the number of trip days is more than 1 which is beyond one night. -- 
+-- We also see that there are entries which have started at end of month and ended on 1st of next month. There are 205422 trips which started before end of ths day and --
+-- ended on the next day. -- 
+
+select Passenger_count, count(Passenger_count) as count_of_passengers from nyc_taxi_table_ravidivecha group by Passenger_count;
+select vendorid, count(Passenger_count) from nyc_taxi_table_ravidivecha where Passenger_count > 9 group by vendorid;
+select vendorid, count(Passenger_count) from nyc_taxi_table_ravidivecha where Passenger_count < 1 group by vendorid;
+-- We can infer that vendorid 2 has incorrectly reported passenger count as 192 once. --
+-- We can infer that there are trips which are recorded with 0 passengers. Majority of such entries are from vendor1. --
+select avg(unix_timestamp(tpep_dropoff_datetime)-unix_timestamp(tpep_pickup_datetime))/360 as AverageTime from nyc_taxi_table_ravidivecha where Passenger_count < 1;
+-- We can observe that the average time for trips with 0 passengers is about 2.3 hours.--
+
+select vendorid, min(abs(Trip_distance)) as min_trip_distance, max(abs(Trip_distance)) as max_trip_distance, avg(abs(Trip_distance)) as Average_Dist, count(Trip_distance) as count_trip_distance from nyc_taxi_table_ravidivecha group by vendorid;
+-- we can infer that the maximum trip distance is about 700 miles and average trip of ~3 miles --
+select vendorid, count(Trip_distance) from nyc_taxi_table_ravidivecha where Trip_distance = 0 AND passenger_count != 0 group by vendorid;
+-- We can infer that there are trips which are very short in distance that are also completed by yellow cabs. --
+
+select PULocationID, count(PULocationID) as count_PULocationID from nyc_taxi_table_ravidivecha group by PULocationID;
+select vendorid, count(PULocationID) as count_PULocationID from nyc_taxi_table_ravidivecha group by vendorid;
+-- Pickup location IDs seem to be appropriately entered. --
+
+select DOLocationID, count(DOLocationID) as count_DOLocationID from nyc_taxi_table_ravidivecha group by DOLocationID;
+select vendorid, count(DOLocationID) as count_DOLocationID from nyc_taxi_table_ravidivecha group by vendorid;
+-- Drop Off location IDs are appropriately entered. --
+
+select RatecodeID, count(RatecodeID)  as count_ratecode from nyc_taxi_table_ravidivecha group by RatecodeID;
+-- Different ratecodeid have been populated. 99 ratecode has been incorrectly added. --
+select vendorid, count(RatecodeID) as count_ratecode from nyc_taxi_table_ravidivecha where RatecodeID = 99 group by vendorid;
+-- we can further infer that both vendors have incorrectly used ratecode 99. --
+
+select Store_and_fwd_flag, count(Store_and_fwd_flag) as Store_and_fwd_flag from nyc_taxi_table_ravidivecha group by Store_and_fwd_flag;
+select vendorid, count(Store_and_fwd_flag) as Store_and_fwd_flag from nyc_taxi_table_ravidivecha where Store_and_fwd_flag = "Y" group by vendorid;
+-- We can infer that internet coverage may not be present at all drop off locations due which this flag is set to Y. --
+-- We can also infer that vendorid 1 seems to be having no interet coverage for 63069 trips. --  
+
+select Payment_type, count(Payment_type) as count_Payment_type from nyc_taxi_table_ravidivecha group by Payment_type; 
+-- We can infer that there are no trips which are marked as "Unknown" or "Voided trip". --
+-- We can infer that credit card is the most preferred mode of payment followed by cash. --
+-- we can infer that there 100530 trips that were not charged. --
+-- We can also infer that 27529 trips were disputed. --
+
+select vendorid, count(Payment_type) as count_Payment_type from nyc_taxi_table_ravidivecha where Payment_type = 3 group by vendorid;
+-- Vendor 1 has 94009 an Vendor 2 has 6521 trips which were not charged -- 
+select vendorid, count(Payment_type) as count_Payment_type from nyc_taxi_table_ravidivecha where Payment_type = 3 AND fare_amount !=0 group by vendorid;
+-- It seems both vendors might have incorrectly selected option 3 while entering the bill details since there many trips with costs charged.
+
+select min(abs(fare_amount)), max(abs(fare_amount)) from nyc_taxi_table_ravidivecha; 
+select fare_amount from nyc_taxi_table_ravidivecha sort by abs(fare_amount) DESC;
+select vendorid, avg(abs(fare_amount)) from nyc_taxi_table_ravidivecha group by vendorid;
+-- We can infer that the fare amount is upto 520$  and the average fare amount is 13$ -- 
+
+select abs(extra) as extra, count(extra) as extra_count from nyc_taxi_table_ravidivecha group by abs(extra) sort by abs(extra) DESC;
+select abs(day(tpep_dropoff_datetime)-day(tpep_pickup_datetime)) as no_of_days, count(abs(day(tpep_dropoff_datetime)-day(tpep_pickup_datetime))) as count_days 
+from nyc_taxi_table_ravidivecha 
+group by abs(day(tpep_dropoff_datetime)-day(tpep_pickup_datetime))
+having abs(day(tpep_dropoff_datetime)-day(tpep_pickup_datetime)) >=1;
+-- We can infer that there are extra costs other than 0.5$ and 1$ which indicates overnight trip or incorrect data entry. --
+-- We can also find that there are trips which have rolled over to the next day.
+
+select MTA_tax, count(MTA_tax)  as count_MTA_tax from nyc_taxi_table_ravidivecha group by MTA_tax; 
+-- We can infer that there are MTA_tax which are correctly triggerd for many trips, however, there are other values which are also present.
+select vendorid, count(MTA_tax) as count_MTA_tax from nyc_taxi_table_ravidivecha where MTA_tax != 0.5 group by vendorid; 
+-- We can also infer that both vendors are triggering MTA_taxa mount other than 0.5$
+
+select vendorid, min(abs(Tip_amount)) as min_tip, max(abs(Tip_amount)) as Max_Tip, avg(abs(Tip_amount)) as AVg_tip from nyc_taxi_table_ravidivecha group by vendorid; 
+-- We can infer that passengers have payed high amount of tip for some of the trips. -- 
+
+select vendorid, min(abs(Tolls_amount)) as Min_toll, max(abs(Tolls_amount)) as Max_Toll, avg(abs(Tolls_amount)) as Avg_Tolls from nyc_taxi_table_ravidivecha group by vendorid; 
+-- We can infer that are very high tolls amount present in the data provided.
+
+select Improvement_surcharge, count(Improvement_surcharge) as Count_Improvement_surcharge from nyc_taxi_table_ravidivecha group by Improvement_surcharge; 
+select vendorid, count(Improvement_surcharge) as Count_Improvement_surcharge from nyc_taxi_table_ravidivecha where abs(Improvement_surcharge) != 0.3 group by vendorid;
+-- We can infer that both vendors are charging improvement_surcharge other than 0.3$ which seems incorrect.
+
+select Total_amount from nyc_taxi_table_ravidivecha sort by abs(Total_amount) DESC limit 10; 
+-- We can infer that the amount of taxi fare can have outliers.
+
+-- Before answering the below questions, you need to create a clean, ORC partitioned table for analysis. Remove all the erroneous rows. --
+-- ASSUMPTIONS --
+-----------------
+-- Based on the data we understand that there is data for years other than 2017 and months other than november and december. --
+-- Also, there is incorrect data under RateCode, MTA_tax, improvement_surcharge and certain dollar values are negative. --
+-- New York City Taxi Passenger Limits. A maximum of four passengers can ride in traditional cabs; there are also some five passenger cabs that look more like minivans which allows. -- 
+-- 1 additional kid therefore a total of 6 passengers maximum. -- 
+
+ADD JAR /opt/cloudera/parcels/CDH/lib/hive/lib/hive-hcatalog-core-1.1.0-cdh5.11.2.jar;
+SET hive.exec.max.dynamic.partitions=100000;
+SET hive.exec.max.dynamic.partitions.pernode=100000;
+
+drop table nyc_taxi_table_ravidivecha_partitioned;
+
+create external table if not exists nyc_taxi_table_ravidivecha_partitioned(
+VendorID int,
+tpep_pickup_datetime timestamp, 
+tpep_dropoff_datetime timestamp,
+Passenger_count int,
+Trip_distance int,
+RateCodeID int,
+Store_and_fwd_flag int,
+PULocationID int,
+DOLocationID int,
+Payment_type int,
+Fare_amount double,
+extra double,
+MTA_tax double,
+Tip_amount double,
+Tolls_amount double,
+Improvement_surcharge double, 
+Total_amount double)
+partitioned by (pick_mnth int)
+location '/user/hive/warehouse/ravidivecha';
+
+insert overwrite table nyc_taxi_table_ravidivecha_partitioned partition(pick_mnth)
+select VendorID, tpep_pickup_datetime, tpep_dropoff_datetime, Passenger_count, Trip_distance, RateCodeID, Store_and_fwd_flag, PULocationID, DOLocationID, Payment_type, 
+Fare_amount, extra, MTA_tax, Tip_amount, Tolls_amount, Improvement_surcharge, Total_amount, month(tpep_pickup_datetime) as pick_mnth 
+from nyc_taxi_table_ravidivecha
+where RateCodeID != 199 AND Total_amount >= 0 AND year(tpep_pickup_datetime) = 2017 AND year(tpep_dropoff_datetime) = 2017 AND month(tpep_pickup_datetime) > 10 
+AND month(tpep_dropoff_datetime) > 10 AND Improvement_surcharge = 0.3 AND MTA_tax = 0.5 AND RateCodeID <= 6 AND Passenger_count <= 6;
+
+select count(*) from nyc_taxi_table_ravidivecha_partitioned;
+-- There are 18696023 number of rows after cleaning the data -- 
+
+-- select pick_mnth, avg(Total_amount) as Average_fare from nyc_taxi_table_ravidivecha_partitioned group by pick_mnth;
+-- select pick_yr, count(pick_yr) from nyc_taxi_table_ravidivecha_partitioned group by pick_yr;
+
+-- Create the ORC table -- 
+ADD JAR /opt/cloudera/parcels/CDH/lib/hive/lib/hive-hcatalog-core-1.1.0-cdh5.11.2.jar;
+SET hive.exec.max.dynamic.partitions=100000;
+SET hive.exec.max.dynamic.partitions.pernode=100000;
+
+drop table nyc_taxi_table_ravidivecha_part_orc;
+
+create external table if not exists nyc_taxi_table_ravidivecha_part_orc(
+VendorID int,
+tpep_pickup_datetime timestamp, 
+tpep_dropoff_datetime timestamp,
+Passenger_count int,
+Trip_distance int,
+RateCodeID int,
+Store_and_fwd_flag int,
+PULocationID int,
+DOLocationID int,
+Payment_type int,
+Fare_amount double,
+extra double,
+MTA_tax double,
+Tip_amount double,
+Tolls_amount double,
+Improvement_surcharge double, 
+Total_amount double)
+partitioned by (pick_mnth int)
+stored as orc location '/user/hive/warehouse/ravidivecha_orc'
+tblproperties ("orc.compress"="SNAPPY");
+
+insert overwrite table nyc_taxi_table_ravidivecha_part_orc partition(pick_mnth)
+select * from nyc_taxi_table_ravidivecha_partitioned;
+
+select count(*) from nyc_taxi_table_ravidivecha_part_orc;
+-- There are 18696023 number of rows after cleaning the data -- 
+
+-- ANALYSIS 1 --
+----------------
+
+-- Compare the overall average fare per trip for November and December.
+select pick_mnth, avg(Total_amount) as Average_fare from nyc_taxi_table_ravidivecha_part_orc group by pick_mnth;
+-- The average total fare for month of November was 16.1$ and for December was 15.9$
+
+-- Explore the ‘number of passengers per trip’ - how many trips are made by each level of ‘Passenger_count’? Do most people travel solo or with other people? --
+select Passenger_count, count(Passenger_count) as Passenger_count from nyc_taxi_table_ravidivecha_part_orc group by Passenger_count sort by Passenger_count DESC;
+-- We can infer that most people do prefer to travel alone.
+-- passenger_count	passenger_count
+-- 6                529281
+-- 5            	872507
+-- 4            	396232
+-- 3            	806266
+-- 2            	2799375
+-- 1            	13184230
+-- 0            	108178
+
+-- Which is the most preferred mode of payment? --
+select Payment_type, count(Payment_type) as Preferred_Mode_Payment from nyc_taxi_table_ravidivecha_part_orc group by Payment_type;
+-- The most preferred mode of payment is Credit card. -- 
+
+-- What is the average tip paid per trip? Compare the average tip with the 25th, 50th and 75th percentiles and comment whether the ‘average tip’ is --
+-- a representative statistic (of the central tendency) of ‘tip amount paid’. Hint: You may use percentile_approx(DOUBLE col, p): Returns an approximate --
+-- pth percentile of a numeric column (including floating point types) in the group. --
+select avg(Tip_amount) as Avg_Tip, percentile_approx(Tip_amount , 0.25) as Tip_FirstQuartile, percentile_approx(Tip_amount , 0.5) as Tip_SecQuartile, percentile_approx(Tip_amount , 0.75)  as Tip_ThirdQuartile 
+from nyc_taxi_table_ravidivecha_part_orc;
+-- The average tip of 1.8$ lies between the second and third quartile.
+
+-- Explore the ‘Extra’ (charge) variable - what fraction of total trips have an extra charge is levied? --
+select extra, count(extra) as extra_count from nyc_taxi_table_ravidivecha_part_orc group by extra sort by extra DESC;
+-- We can infer that there are charges apart from 0.5$ and 1$ which are present in extra charges. These could be due to overnight drops.
+
+select abs(day(tpep_dropoff_datetime)-day(tpep_pickup_datetime)) as no_of_days, count(abs(day(tpep_dropoff_datetime)-day(tpep_pickup_datetime))) as count_days 
+from nyc_taxi_table_ravidivecha_part_orc 
+where abs(day(tpep_dropoff_datetime)-day(tpep_pickup_datetime)) > 0
+group by abs(day(tpep_dropoff_datetime)-day(tpep_pickup_datetime));
+-- There are no records to show that there is an over night drop and therefore there should not be any extra charges other than 0.5$ and 1$
+
+select sum(IF( extra != 0, 1 , 0 ))/count(*) * 100 as fraction from nyc_taxi_table_ravidivecha_part_orc;
+-- 46.3% of fairs have extra charges applied.
+
+-- Analysis-II --
+-----------------
+
+-- What is the correlation between the number of passengers on any given trip, and the tip paid per trip? Do multiple travellers tip more --
+-- compared to solo travellers? Hint: Use CORR(Col_1, Col_2) --
+select CORR(Passenger_count, Tip_amount) from nyc_taxi_table_ravidivecha_part_orc;
+select CORR(Passenger_count, Tip_amount) from nyc_taxi_table_ravidivecha_part_orc where Passenger_count > 1;
+-- One can say that the correlation (0.003) between passenger count and tip are not directly proportional and very close to 0 meaning no correlation at all.
+
+-- Segregate the data into five segments of ‘tip paid’: [0-5), [5-10), [10-15) , [15-20) and >=20. Calculate the percentage share of each  --
+-- bucket (i.e. the fraction of trips falling in each bucket). --
+select sum(IF( abs(Tip_amount) <5, 1 , 0 ))/count(*) * 100 from nyc_taxi_table_ravidivecha_part_orc;
+-- 92.33% of passengers have paid a tip between 0 to 5 dollars.
+select sum(IF( abs(Tip_amount) >=5 AND abs(Tip_amount) < 10, 1 , 0 ))/count(*) * 100 from nyc_taxi_table_ravidivecha_part_orc;
+-- 5.62% of passengers have paid a tip between 5 to 10 dollars.
+select sum(IF( abs(Tip_amount) >= 10 AND abs(Tip_amount) < 15, 1 , 0 ))/count(*) * 100 from nyc_taxi_table_ravidivecha_part_orc;
+-- 1.81% of passengers have paid a tip between 10 to 15 dollars.
+select sum(IF( abs(Tip_amount) >= 15 AND abs(Tip_amount) < 20, 1 , 0 ))/count(*) * 100 from nyc_taxi_table_ravidivecha_part_orc;
+-- 0.16% of passengers have paid a tip between 15 to 20 dollars.
+select sum(IF( abs(Tip_amount) >= 20 , 1 , 0 ))/count(*) * 100 from nyc_taxi_table_ravidivecha_part_orc;
+-- 0.06% of passengers have paid a tip more than 20 dollars.
+
+-- Which month has a greater average ‘speed’ - November or December? Note that the variable ‘speed’ will have to be derived from other metrics. -- 
+-- Hint: You have columns for distance and time. --
+select pick_mnth, avg(Trip_distance * 60 * 60 / (unix_timestamp(tpep_dropoff_datetime) - unix_timestamp(tpep_pickup_datetime))) from nyc_taxi_table_ravidivecha_part_orc group by pick_mnth;
+-- We can infer that November has a better average speed than December.
+-- November average speed = 8.8 miles/hr
+-- december average speed = 8.7 miles/hr
+
+-- Analyse the average speed of the most happening days of the year, i.e. 31st December (New year’s eve) and 25th December (Christmas Eve) --
+-- and compare it with the overall average. --
+select avg(Trip_distance * 60 * 60 / (unix_timestamp(tpep_dropoff_datetime) - unix_timestamp(tpep_pickup_datetime))) from nyc_taxi_table_ravidivecha_part_orc;
+-- Average speed for November and December is 8.75 miles/hr
+
+select avg(Trip_distance * 60 * 60 / (unix_timestamp(tpep_dropoff_datetime) - unix_timestamp(tpep_pickup_datetime))) 
+from nyc_taxi_table_ravidivecha_part_orc 
+where month(tpep_dropoff_datetime) = 12 AND day(tpep_dropoff_datetime) = 25;
+-- Average speed on 25th December is 11.8 miles/hr
+
+select avg(Trip_distance * 60 * 60 / (unix_timestamp(tpep_dropoff_datetime) - unix_timestamp(tpep_pickup_datetime))) 
+from nyc_taxi_table_ravidivecha_part_orc 
+where month(tpep_dropoff_datetime) = 12 AND day(tpep_dropoff_datetime) = 31;
+-- Average speed on 31st December is  9.23 miles/hr
+
+-- One can infer that the average speeds on happenings days is much better than the other days.
+
+------------------------------ END OF ASSIGNMENT ----------------------------------------------
